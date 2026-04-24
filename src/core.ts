@@ -11,6 +11,7 @@ import {
 	type Position,
 	type Range,
 } from "vscode-languageserver/node.js";
+import { matchMessageCalls, normalizeMessageFunctionAliases } from "./message-matcher.js";
 
 export type OffsetRange = {
 	start: number;
@@ -31,6 +32,12 @@ export type InlayHintOptions = {
 	showExisting?: boolean;
 	showMissing?: boolean;
 };
+
+export type MessageFunctionOptions = {
+	messageFunctionAliases?: string[];
+};
+
+export type CompletionAccessKind = "any" | "dot" | "bracket";
 
 export type MessageEntry = {
 	key: string;
@@ -94,39 +101,23 @@ export async function loadMessageIndex(projectRoot: string): Promise<MessageInde
 	};
 }
 
-export function parseMessageCalls(source: string): MessageCall[] {
-	const calls: MessageCall[] = [];
-	const matcher = /\bm\.([A-Za-z_$][\w$]*)\s*\(/g;
-
-	for (const match of source.matchAll(matcher)) {
-		const callStart = match.index;
-		const key = match[1];
-		if (callStart === undefined || key === undefined) continue;
-
-		const keyStart = callStart + match[0].indexOf(key);
-		const openParen = callStart + match[0].length - 1;
-		const callEnd = findClosingParenEnd(source, openParen) ?? callStart + match[0].length;
-		calls.push({
-			key,
-			range: {
-				start: keyStart,
-				end: keyStart + key.length,
-			},
-			callRange: {
-				start: callStart,
-				end: callEnd,
-			},
-		});
-	}
-
-	return calls;
+export async function parseMessageCalls(
+	source: string,
+	options: MessageFunctionOptions = {}
+): Promise<MessageCall[]> {
+	return matchMessageCalls(source, options);
 }
 
-export function createDiagnostics(uri: string, source: string, index: MessageIndex): Diagnostic[] {
+export async function createDiagnostics(
+	uri: string,
+	source: string,
+	index: MessageIndex,
+	options: MessageFunctionOptions = {}
+): Promise<Diagnostic[]> {
 	void uri;
 	const diagnostics: Diagnostic[] = [];
 
-	for (const call of parseMessageCalls(source)) {
+	for (const call of await parseMessageCalls(source, options)) {
 		const entry = index.messages.get(call.key);
 
 		if (!entry) {
@@ -154,14 +145,16 @@ export function createDiagnostics(uri: string, source: string, index: MessageInd
 	return diagnostics;
 }
 
-export function createHover(
+export async function createHover(
 	uri: string,
 	source: string,
 	offset: number,
-	index: MessageIndex
-): Hover | null {
+	index: MessageIndex,
+	options: MessageFunctionOptions = {}
+): Promise<Hover | null> {
 	void uri;
-	const call = parseMessageCalls(source).find(
+	const calls = await parseMessageCalls(source, options);
+	const call = calls.find(
 		(candidate) => offset >= candidate.range.start && offset <= candidate.range.end
 	);
 	if (!call) return null;
@@ -184,8 +177,12 @@ export function createHover(
 	};
 }
 
-export function createCompletionItems(index: MessageIndex): CompletionItem[] {
+export function createCompletionItems(
+	index: MessageIndex,
+	accessKind: CompletionAccessKind = "any"
+): CompletionItem[] {
 	return [...index.messages.values()]
+		.filter((entry) => accessKind !== "dot" || isIdentifierMessageKey(entry.key))
 		.sort((left, right) => left.key.localeCompare(right.key))
 		.map((entry) => {
 			const baseText = entry.translations[index.baseLocale];
@@ -203,16 +200,20 @@ export function createCompletionItems(index: MessageIndex): CompletionItem[] {
 					value: documentation,
 				},
 			};
-		});
+	});
 }
 
-export function createInlayHints(
+function isIdentifierMessageKey(key: string): boolean {
+	return /^[A-Za-z_$][\w$]*$/.test(key);
+}
+
+export async function createInlayHints(
 	uri: string,
 	source: string,
 	range: Range,
 	index: MessageIndex,
-	options: InlayHintOptions = {}
-): InlayHint[] {
+	options: InlayHintOptions & MessageFunctionOptions = {}
+): Promise<InlayHint[]> {
 	void uri;
 
 	if (options.enabled === false) return [];
@@ -224,7 +225,7 @@ export function createInlayHints(
 	const showMissing = options.showMissing ?? true;
 	const hints: InlayHint[] = [];
 
-	for (const call of parseMessageCalls(source)) {
+	for (const call of await parseMessageCalls(source, options)) {
 		const position = offsetToPosition(source, call.callRange.end);
 		if (!isPositionInRange(position, range)) continue;
 
@@ -263,9 +264,33 @@ export function createInlayHints(
 	return hints;
 }
 
-export function shouldOfferCompletion(source: string, offset: number): boolean {
+export function shouldOfferCompletion(
+	source: string,
+	offset: number,
+	options: MessageFunctionOptions = {}
+): boolean {
+	return getMessageCompletionContext(source, offset, options) !== null;
+}
+
+export function getMessageCompletionContext(
+	source: string,
+	offset: number,
+	options: MessageFunctionOptions = {}
+): Exclude<CompletionAccessKind, "any"> | null {
 	const prefix = source.slice(Math.max(0, offset - 80), offset);
-	return /\bm\.[A-Za-z_$\w$]*$/.test(prefix);
+	const aliasPattern = normalizeMessageFunctionAliases(options.messageFunctionAliases)
+		.map(escapeRegExp)
+		.join("|");
+
+	if (new RegExp(`\\b(?:${aliasPattern})\\.[A-Za-z_$\\w$]*$`).test(prefix)) return "dot";
+	if (new RegExp(`\\b(?:${aliasPattern})\\s*\\[\\s*'[^'\\]\\r\\n]*$`).test(prefix)) {
+		return "bracket";
+	}
+	if (new RegExp(`\\b(?:${aliasPattern})\\s*\\[\\s*"[^"\\]\\r\\n]*$`).test(prefix)) {
+		return "bracket";
+	}
+
+	return null;
 }
 
 export function offsetToPosition(source: string, offset: number): Position {
@@ -284,51 +309,6 @@ export function offsetToPosition(source: string, offset: number): Position {
 		line,
 		character: safeOffset - lineStart,
 	};
-}
-
-function findClosingParenEnd(source: string, openParen: number): number | null {
-	let depth = 0;
-	let quote: string | null = null;
-	let escaped = false;
-
-	for (let index = openParen; index < source.length; index += 1) {
-		const character = source[index];
-		if (!character) continue;
-
-		if (quote) {
-			if (escaped) {
-				escaped = false;
-				continue;
-			}
-
-			if (character === "\\") {
-				escaped = true;
-				continue;
-			}
-
-			if (character === quote) {
-				quote = null;
-			}
-			continue;
-		}
-
-		if (character === "'" || character === '"' || character === "`") {
-			quote = character;
-			continue;
-		}
-
-		if (character === "(") {
-			depth += 1;
-			continue;
-		}
-
-		if (character === ")") {
-			depth -= 1;
-			if (depth === 0) return index + 1;
-		}
-	}
-
-	return null;
 }
 
 function resolveDisplayLocale(index: MessageIndex, displayLocale: string | undefined): string {
@@ -401,6 +381,10 @@ function offsetRangeToLspRange(source: string, range: OffsetRange): Range {
 		start: offsetToPosition(source, range.start),
 		end: offsetToPosition(source, range.end),
 	};
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function readString(value: unknown, name: string): string {

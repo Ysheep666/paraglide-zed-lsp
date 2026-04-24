@@ -1,5 +1,6 @@
 {
 	"$schema": "../../../schemas/inlang/message-format.schema.json",
 	"common_loading": "Loading…",
-	"common_reload": "Reload"
+	"common_reload": "Reload",
+	"session.changes_summary.open": "Open"
 }

@@ -20,7 +20,10 @@ The Zed extension does not vendor the language server. At runtime it installs
 
 ## Features
 
-- Detects `m.message_key()` calls.
+- Detects Paraglide message calls using inlang's official
+  `@inlang/plugin-m-function-matcher`.
+- Supports `m.message_key()` and static bracket access such as
+  `m["session.changes_summary.open"]()`.
 - Shows all locale values on hover.
 - Completes Paraglide message keys after `m.`.
 - Reports unknown keys and missing locale translations.
@@ -126,6 +129,7 @@ Most users should not need this section. The defaults are:
 ```json
 {
   "paraglideI18n": {
+    "messageFunctionAliases": [],
     "inlayHints": {
       "enabled": true,
       "displayLocale": "auto",
@@ -133,6 +137,26 @@ Most users should not need this section. The defaults are:
       "maxLength": 80,
       "showExisting": true,
       "showMissing": true
+    }
+  }
+}
+```
+
+Message references use Paraglide's conventional `m` namespace by default:
+`m.message_key()`, `m["message.key"]()`, and `m['message.key']()`.
+
+If a project intentionally imports generated messages under another namespace,
+add that alias explicitly. The built-in `m` namespace remains enabled:
+
+```json
+{
+  "lsp": {
+    "paraglide-i18n-svelte": {
+      "settings": {
+        "paraglideI18n": {
+          "messageFunctionAliases": ["messages"]
+        }
+      }
     }
   }
 }
@@ -238,8 +262,10 @@ extension manifest keeps the public extension id `paraglide-i18n`.
 
 This MVP intentionally keeps the parser narrow:
 
-- Only `m.key()` calls are parsed.
-- Dynamic calls, aliases, destructuring, and `m[key]` are not parsed.
+- The built-in `m` namespace is parsed by default.
+- Explicit `messageFunctionAliases` are supported for namespace-style message imports.
+- Static dot and bracket calls are parsed, including `m.key()` and `m["key.with.dots"]()`.
+- Dynamic calls, destructuring, and `m[key]` are not parsed.
 - Only flat JSON string messages are indexed.
 - Message files are read-only.
 - Code actions, extraction, and go-to-definition are future work.

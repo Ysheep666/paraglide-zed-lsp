@@ -2,5 +2,6 @@
 	"$schema": "../../../schemas/inlang/message-format.schema.json",
 	"common_loading": "加载中…",
 	"common_reload": "重新加载",
-	"auth_login_title": "登录"
+	"auth_login_title": "登录",
+	"session.changes_summary.open": "打开"
 }

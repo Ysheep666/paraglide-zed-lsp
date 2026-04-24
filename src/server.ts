@@ -15,20 +15,25 @@ import {
 	createDiagnostics,
 	createHover,
 	createInlayHints,
-	loadMessageIndex,
-	shouldOfferCompletion,
+	getMessageCompletionContext,
 	type InlayHintOptions,
+	type MessageFunctionOptions,
 	type MessageIndex,
 } from "./core.js";
-import { findProjectRootForDocument } from "./workspace.js";
+import { DocumentValidationVersions, MessageIndexCache } from "./server-state.js";
 
 const connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout);
 const documents = new TextDocuments(TextDocument);
 let workspaceFolders: string[] = [];
 let hasConfigurationCapability = false;
+const messageIndexCache = new MessageIndexCache();
+const validationVersions = new DocumentValidationVersions();
+const pendingValidationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const VALIDATION_DEBOUNCE_MS = 100;
 
 type ParaglideServerSettings = {
 	inlayHints: InlayHintOptions;
+	messageFunctionAliases: NonNullable<MessageFunctionOptions["messageFunctionAliases"]>;
 };
 
 const defaultServerSettings = {
@@ -40,6 +45,7 @@ const defaultServerSettings = {
 		showExisting: true,
 		showMissing: true,
 	},
+	messageFunctionAliases: [],
 } satisfies ParaglideServerSettings;
 
 connection.onInitialize((params: InitializeParams): InitializeResult => {
@@ -55,7 +61,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 			hoverProvider: true,
 			completionProvider: {
 				resolveProvider: false,
-				triggerCharacters: ["."],
+				triggerCharacters: [".", "'", "\""],
 			},
 			inlayHintProvider: {
 				resolveProvider: false,
@@ -65,14 +71,16 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 });
 
 documents.onDidOpen((event) => {
-	void validateDocument(event.document);
+	scheduleValidateDocument(event.document, 0);
 });
 
 documents.onDidChangeContent((event) => {
-	void validateDocument(event.document);
+	scheduleValidateDocument(event.document, VALIDATION_DEBOUNCE_MS);
 });
 
 documents.onDidClose((event) => {
+	clearPendingValidation(event.document.uri);
+	validationVersions.clear(event.document.uri);
 	connection.sendDiagnostics({
 		uri: event.document.uri,
 		diagnostics: [],
@@ -83,10 +91,19 @@ connection.onHover(async (params) => {
 	const document = documents.get(params.textDocument.uri);
 	if (!document) return null;
 
-	const index = await loadIndexForDocument(document.uri);
+	const [index, settings] = await Promise.all([
+		loadIndexForDocument(document.uri),
+		loadServerSettings(),
+	]);
 	if (!index) return null;
 
-	return createHover(document.uri, document.getText(), document.offsetAt(params.position), index);
+	return await createHover(
+		document.uri,
+		document.getText(),
+		document.offsetAt(params.position),
+		index,
+		settings
+	);
 });
 
 connection.onCompletion(async (params): Promise<CompletionItem[]> => {
@@ -95,12 +112,14 @@ connection.onCompletion(async (params): Promise<CompletionItem[]> => {
 
 	const source = document.getText();
 	const offset = document.offsetAt(params.position);
-	if (!shouldOfferCompletion(source, offset)) return [];
+	const settings = await loadServerSettings();
+	const completionContext = getMessageCompletionContext(source, offset, settings);
+	if (!completionContext) return [];
 
 	const index = await loadIndexForDocument(document.uri);
 	if (!index) return [];
 
-	return createCompletionItems(index);
+	return createCompletionItems(index, completionContext);
 });
 
 connection.languages.inlayHint.on(async (params) => {
@@ -113,18 +132,22 @@ connection.languages.inlayHint.on(async (params) => {
 	]);
 	if (!index) return [];
 
-	return createInlayHints(
+	return await createInlayHints(
 		document.uri,
 		document.getText(),
 		params.range,
 		index,
-		settings.inlayHints
+		{
+			...settings.inlayHints,
+			messageFunctionAliases: settings.messageFunctionAliases,
+		}
 	);
 });
 
 connection.onDidChangeConfiguration(() => {
+	messageIndexCache.clear();
 	for (const document of documents.all()) {
-		void validateDocument(document);
+		scheduleValidateDocument(document, 0);
 	}
 	void connection.languages.inlayHint.refresh().catch((error: unknown) => {
 		connection.console.warn(formatError(error));
@@ -134,16 +157,50 @@ connection.onDidChangeConfiguration(() => {
 documents.listen(connection);
 connection.listen();
 
-async function validateDocument(document: TextDocument): Promise<void> {
+function scheduleValidateDocument(document: TextDocument, delayMs: number): void {
+	clearPendingValidation(document.uri);
+	validationVersions.mark(document.uri, document.version);
+
+	const timer = setTimeout(() => {
+		pendingValidationTimers.delete(document.uri);
+		void validateDocument(document.uri, document.version);
+	}, delayMs);
+	pendingValidationTimers.set(document.uri, timer);
+}
+
+function clearPendingValidation(documentUri: string): void {
+	const timer = pendingValidationTimers.get(documentUri);
+	if (timer) {
+		clearTimeout(timer);
+		pendingValidationTimers.delete(documentUri);
+	}
+}
+
+async function validateDocument(documentUri: string, version: number): Promise<void> {
+	const document = documents.get(documentUri);
+	if (!document || document.version !== version || !validationVersions.isCurrent(documentUri, version)) {
+		return;
+	}
+
 	let diagnostics: Diagnostic[] = [];
 
 	try {
 		const index = await loadIndexForDocument(document.uri);
 		if (index) {
-			diagnostics = createDiagnostics(document.uri, document.getText(), index);
+			const settings = await loadServerSettings();
+			diagnostics = await createDiagnostics(document.uri, document.getText(), index, settings);
 		}
 	} catch (error) {
 		connection.console.warn(formatError(error));
+	}
+
+	const latestDocument = documents.get(documentUri);
+	if (
+		!latestDocument ||
+		latestDocument.version !== version ||
+		!validationVersions.isCurrent(documentUri, version)
+	) {
+		return;
 	}
 
 	connection.sendDiagnostics({
@@ -153,11 +210,8 @@ async function validateDocument(document: TextDocument): Promise<void> {
 }
 
 async function loadIndexForDocument(documentUri: string): Promise<MessageIndex | null> {
-	const projectRoot = await findProjectRootForDocument(documentUri, workspaceFolders);
-	if (!projectRoot) return null;
-
 	try {
-		return await loadMessageIndex(projectRoot);
+		return await messageIndexCache.loadForDocument(documentUri, workspaceFolders);
 	} catch (error) {
 		connection.console.warn(formatError(error));
 		return null;
@@ -174,8 +228,10 @@ async function loadServerSettings(): Promise<ParaglideServerSettings> {
 
 	try {
 		const raw = (await connection.workspace.getConfiguration("paraglideI18n")) as unknown;
+		const root = isRecord(raw) && isRecord(raw.paraglideI18n) ? raw.paraglideI18n : raw;
 		return {
-			inlayHints: normalizeInlayHintOptions(raw),
+			inlayHints: normalizeInlayHintOptions(root),
+			messageFunctionAliases: normalizeMessageFunctionAliases(root),
 		};
 	} catch (error) {
 		connection.console.warn(formatError(error));
@@ -186,8 +242,7 @@ async function loadServerSettings(): Promise<ParaglideServerSettings> {
 function normalizeInlayHintOptions(raw: unknown): InlayHintOptions {
 	if (!isRecord(raw)) return defaultServerSettings.inlayHints;
 
-	const root = isRecord(raw.paraglideI18n) ? raw.paraglideI18n : raw;
-	const rawInlayHints = isRecord(root.inlayHints) ? root.inlayHints : {};
+	const rawInlayHints = isRecord(raw.inlayHints) ? raw.inlayHints : {};
 
 	return {
 		enabled: readBoolean(rawInlayHints.enabled, defaultServerSettings.inlayHints.enabled),
@@ -202,6 +257,13 @@ function normalizeInlayHintOptions(raw: unknown): InlayHintOptions {
 	};
 }
 
+function normalizeMessageFunctionAliases(
+	raw: unknown
+): NonNullable<MessageFunctionOptions["messageFunctionAliases"]> {
+	if (!isRecord(raw)) return defaultServerSettings.messageFunctionAliases;
+	return readStringArray(raw.messageFunctionAliases, defaultServerSettings.messageFunctionAliases);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
@@ -213,6 +275,11 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
 function readString(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
 	return value.length > 0 ? value : undefined;
+}
+
+function readStringArray(value: unknown, fallback: string[]): string[] {
+	if (!Array.isArray(value)) return fallback;
+	return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 }
 
 function readInlayHintFormat(
