@@ -32,16 +32,31 @@ impl ParaglideI18nExtension {
             Ok(version) => version,
             Err(_) if self.server_exists() => {
                 self.checked_npm_package = true;
+                clear_language_server_installation_status(language_server_id);
                 return Ok(SERVER_PATH.to_string());
             }
             Err(error) => {
-                return Err(format!(
-                    "Failed to resolve latest npm version for '{PACKAGE_NAME}': {error}"
+                let message =
+                    format!("Failed to resolve latest npm version for '{PACKAGE_NAME}': {error}");
+                return Err(fail_language_server_installation(
+                    language_server_id,
+                    message,
                 ));
             }
         };
 
-        let installed_version = zed::npm_package_installed_version(PACKAGE_NAME)?;
+        let installed_version = match zed::npm_package_installed_version(PACKAGE_NAME) {
+            Ok(version) => version,
+            Err(error) => {
+                let message = format!(
+                    "Failed to resolve installed npm version for '{PACKAGE_NAME}': {error}"
+                );
+                return Err(fail_language_server_installation(
+                    language_server_id,
+                    message,
+                ));
+            }
+        };
         if !self.server_exists() || installed_version.as_ref() != Some(&latest_version) {
             zed::set_language_server_installation_status(
                 language_server_id,
@@ -52,15 +67,14 @@ impl ParaglideI18nExtension {
             if let Err(error) = install_result {
                 if self.server_exists() {
                     self.checked_npm_package = true;
+                    clear_language_server_installation_status(language_server_id);
                     return Ok(SERVER_PATH.to_string());
                 }
 
-                zed::set_language_server_installation_status(
+                let message = format!("Failed to install npm package '{PACKAGE_NAME}': {error}");
+                return Err(fail_language_server_installation(
                     language_server_id,
-                    &zed::LanguageServerInstallationStatus::Failed(error.clone()),
-                );
-                return Err(format!(
-                    "Failed to install npm package '{PACKAGE_NAME}': {error}"
+                    message,
                 ));
             }
         }
@@ -77,6 +91,7 @@ impl ParaglideI18nExtension {
         }
 
         self.checked_npm_package = true;
+        clear_language_server_installation_status(language_server_id);
         Ok(SERVER_PATH.to_string())
     }
 }
@@ -121,6 +136,24 @@ fn dev_server_entrypoint() -> Result<Option<PathBuf>> {
     }
 
     Ok(Some(server_path))
+}
+
+fn clear_language_server_installation_status(language_server_id: &zed::LanguageServerId) {
+    zed::set_language_server_installation_status(
+        language_server_id,
+        &zed::LanguageServerInstallationStatus::None,
+    );
+}
+
+fn fail_language_server_installation(
+    language_server_id: &zed::LanguageServerId,
+    message: String,
+) -> String {
+    zed::set_language_server_installation_status(
+        language_server_id,
+        &zed::LanguageServerInstallationStatus::Failed(message.clone()),
+    );
+    message
 }
 
 zed::register_extension!(ParaglideI18nExtension);

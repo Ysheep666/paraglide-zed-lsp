@@ -6,12 +6,12 @@
 	"type": "module",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/runloom/paraglide-zed-lsp.git"
+		"url": "git+https://github.com/Ysheep666/paraglide-zed-lsp.git"
 	},
 	"bugs": {
-		"url": "https://github.com/runloom/paraglide-zed-lsp/issues"
+		"url": "https://github.com/Ysheep666/paraglide-zed-lsp/issues"
 	},
-	"homepage": "https://github.com/runloom/paraglide-zed-lsp#readme",
+	"homepage": "https://github.com/Ysheep666/paraglide-zed-lsp#readme",
 	"keywords": [
 		"paraglide",
 		"inlang",

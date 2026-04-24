@@ -4,7 +4,7 @@ description = "Paraglide message hover, completion, and diagnostics"
 version = "0.1.0"
 schema_version = 1
 authors = ["Runloom"]
-repository = "https://github.com/runloom/paraglide-zed-lsp"
+repository = "https://github.com/Ysheep666/paraglide-zed-lsp"
 
 [language_servers.paraglide-i18n-svelte]
 name = "Paraglide i18n LSP"
