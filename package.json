@@ -20,7 +20,7 @@
 		"zed"
 	],
 	"bin": {
-		"paraglide-zed-lsp": "./dist/src/server.js"
+		"paraglide-zed-lsp": "dist/src/server.js"
 	},
 	"files": [
 		"dist/src/core.js",
