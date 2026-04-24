@@ -2,6 +2,13 @@
 
 Lightweight Paraglide / inlang language-server support for Zed.
 
+The default experience is intentionally low-configuration:
+
+- Install the Zed extension.
+- Open a project with `project.inlang/settings.json` and `messages/{locale}.json`.
+- Hover, completion, and diagnostics work without extra LSP settings.
+- Translation inline hints only need Zed's generic `show_other_hints` switch.
+
 This project contains two deliverables:
 
 - A Zed extension shell written in Rust and compiled by Zed to WebAssembly.
@@ -17,11 +24,103 @@ The Zed extension does not vendor the language server. At runtime it installs
 - Shows all locale values on hover.
 - Completes Paraglide message keys after `m.`.
 - Reports unknown keys and missing locale translations.
-- Shows translation inlay hints for the configured display locale.
+- Shows translation inline hints for the configured display locale.
 - Reads the common Paraglide project layout:
   `project.inlang/settings.json` plus `messages/{locale}.json`.
 
-## Zed Configuration
+## Quick Start
+
+Install `Paraglide i18n` from Zed's extension gallery.
+
+For hover, completion, and diagnostics, no project settings are required. The
+language server automatically uses:
+
+- `baseLocale` from `project.inlang/settings.json`.
+- `messages/{locale}.json` or the configured
+  `plugin.inlang.messageFormat.pathPattern`.
+- Compact inline labels such as `en · Save`.
+
+## Optional Inline Hints
+
+Zed only asks language servers for inline hints when editor-level inlay hints
+are enabled. To show Paraglide translation hints, add the smallest useful
+project setting:
+
+```json
+{
+  "inlay_hints": {
+    "enabled": true,
+    "show_other_hints": true
+  }
+}
+```
+
+If you want translation hints without TypeScript or Svelte type and parameter
+hints, use this quieter setting:
+
+```json
+{
+  "inlay_hints": {
+    "enabled": true,
+    "show_type_hints": false,
+    "show_parameter_hints": false,
+    "show_other_hints": true
+  }
+}
+```
+
+For team projects that want automatic extension installation, use:
+
+```json
+{
+  "auto_install_extensions": {
+    "paraglide-i18n": true
+  },
+  "inlay_hints": {
+    "enabled": true,
+    "show_other_hints": true
+  }
+}
+```
+
+## Advanced Settings
+
+Most users should not need this section. The defaults are:
+
+```json
+{
+  "paraglideI18n": {
+    "inlayHints": {
+      "enabled": true,
+      "displayLocale": "auto",
+      "format": "compact",
+      "maxLength": 80,
+      "showExisting": true,
+      "showMissing": true
+    }
+  }
+}
+```
+
+`displayLocale: "auto"` uses the `baseLocale` from
+`project.inlang/settings.json`. You can override it per language server if you
+always want a concrete locale:
+
+```json
+{
+  "lsp": {
+    "paraglide-i18n-svelte": {
+      "settings": {
+        "paraglideI18n": {
+          "inlayHints": {
+            "displayLocale": "en"
+          }
+        }
+      }
+    }
+  }
+}
+```
 
 The extension registers three language servers:
 
@@ -47,33 +146,6 @@ your user or project `settings.json`:
   }
 }
 ```
-
-Inlay hints can be configured through Zed's LSP settings:
-
-```json
-{
-  "lsp": {
-    "paraglide-i18n-svelte": {
-      "settings": {
-        "paraglideI18n": {
-          "inlayHints": {
-            "enabled": true,
-            "displayLocale": "auto",
-            "format": "compact",
-            "maxLength": 80,
-            "showExisting": true,
-            "showMissing": true
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-`displayLocale: "auto"` uses the `baseLocale` from
-`project.inlang/settings.json`. You can also set a concrete locale such as
-`"en"` or `"zh"`.
 
 If you restrict Zed extension capabilities globally, allow this npm package:
 
@@ -122,7 +194,7 @@ npm pack --dry-run
 npm publish
 ```
 
-Then submit the Zed extension repository to
+Then submit or update the Zed extension registry entry in
 [`zed-industries/extensions`](https://github.com/zed-industries/extensions). The
 extension manifest keeps the public extension id `paraglide-i18n`.
 
@@ -138,8 +210,11 @@ This MVP intentionally keeps the parser narrow:
 
 ## 中文说明
 
-这个仓库现在按可开源发布形态组织：Zed 扩展本身只负责安装并启动 npm 包
-`paraglide-zed-lsp`，不会把 TypeScript LSP server 直接打进扩展产物里。
+这个版本把用户配置成本压到最低：
+
+- hover、completion、diagnostics 默认零配置可用。
+- 翻译 inline hints 只需要开启 Zed 的 `inlay_hints.show_other_hints`。
+- 语言展示默认使用 `project.inlang/settings.json` 的 `baseLocale`，不需要单独配置。
 
 本地调试时使用 `PARAGLIDE_ZED_LSP_SERVER` 指向 `dist/src/server.js`；正式安装
 时由 Zed 扩展自动通过 npm 安装并启动。
