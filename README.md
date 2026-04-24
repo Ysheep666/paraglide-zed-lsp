@@ -83,6 +83,42 @@ For team projects that want automatic extension installation, use:
 }
 ```
 
+## AI-assisted Setup
+
+If you prefer not to edit Zed settings by hand, copy this prompt into your AI
+coding assistant in the target project:
+
+```text
+Please configure this project for the Zed Paraglide i18n extension.
+
+Requirements:
+1. Detect whether this repo uses Paraglide/inlang by checking for
+   project.inlang/settings.json.
+2. Create or update .zed/settings.json.
+3. Preserve existing Zed settings.
+4. Ensure the Paraglide i18n extension is auto-installed.
+5. Enable translation inline hints without enabling noisy type or parameter
+   hints.
+
+Use this Zed settings shape:
+
+{
+  "auto_install_extensions": {
+    "paraglide-i18n": true
+  },
+  "inlay_hints": {
+    "enabled": true,
+    "show_type_hints": false,
+    "show_parameter_hints": false,
+    "show_other_hints": true
+  }
+}
+
+Do not overwrite unrelated settings. Merge with existing .zed/settings.json if
+it exists. After editing, show the final .zed/settings.json and explain what
+changed.
+```
+
 ## Advanced Settings
 
 Most users should not need this section. The defaults are:
@@ -214,6 +250,7 @@ This MVP intentionally keeps the parser narrow:
 
 - hover、completion、diagnostics 默认零配置可用。
 - 翻译 inline hints 只需要开启 Zed 的 `inlay_hints.show_other_hints`。
+- 不想手动改 JSON 时，可以复制 `AI-assisted Setup` 提示词交给 AI 工具配置。
 - 语言展示默认使用 `project.inlang/settings.json` 的 `baseLocale`，不需要单独配置。
 
 本地调试时使用 `PARAGLIDE_ZED_LSP_SERVER` 指向 `dist/src/server.js`；正式安装
