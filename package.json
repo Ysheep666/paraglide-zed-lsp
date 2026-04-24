@@ -1,0 +1,52 @@
+{
+	"name": "paraglide-zed-lsp",
+	"version": "0.1.0",
+	"description": "Paraglide and inlang language server for Zed",
+	"license": "MIT",
+	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/runloom/paraglide-zed-lsp.git"
+	},
+	"bugs": {
+		"url": "https://github.com/runloom/paraglide-zed-lsp/issues"
+	},
+	"homepage": "https://github.com/runloom/paraglide-zed-lsp#readme",
+	"keywords": [
+		"paraglide",
+		"inlang",
+		"i18n",
+		"lsp",
+		"zed"
+	],
+	"bin": {
+		"paraglide-zed-lsp": "./dist/src/server.js"
+	},
+	"files": [
+		"dist/src/core.js",
+		"dist/src/server.js",
+		"dist/src/workspace.js",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"check": "tsc -p tsconfig.json --noEmit",
+		"test": "vitest run",
+		"smoke": "bun run build && node ./dist/src/smoke.js",
+		"verify": "bun run check && bun run test && bun run smoke && cargo check",
+		"prepack": "bun run verify",
+		"prepublishOnly": "bun run verify",
+		"zed:sync": "bun run build && node ./scripts/sync-zed-dev-extension.mjs"
+	},
+	"dependencies": {
+		"vscode-languageserver": "^9.0.1",
+		"vscode-languageserver-textdocument": "^1.0.12",
+		"vscode-uri": "^3.1.0"
+	},
+	"devDependencies": {
+		"@types/node": "^24.0.0",
+		"typescript": "^5.8.3",
+		"vitest": "^3.2.4"
+	}
+}

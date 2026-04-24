@@ -1,0 +1,19 @@
+id = "paraglide-i18n"
+name = "Paraglide i18n"
+description = "Paraglide message hover, completion, and diagnostics"
+version = "0.1.0"
+schema_version = 1
+authors = ["Runloom"]
+repository = "https://github.com/runloom/paraglide-zed-lsp"
+
+[language_servers.paraglide-i18n-svelte]
+name = "Paraglide i18n LSP"
+language = "Svelte"
+
+[language_servers.paraglide-i18n-typescript]
+name = "Paraglide i18n LSP"
+language = "TypeScript"
+
+[language_servers.paraglide-i18n-javascript]
+name = "Paraglide i18n LSP"
+language = "JavaScript"
