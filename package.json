@@ -1,6 +1,6 @@
 {
 	"name": "paraglide-zed-lsp",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"description": "Paraglide and inlang language server for Zed",
 	"license": "MIT",
 	"type": "module",
@@ -36,7 +36,7 @@
 		"check": "tsc -p tsconfig.json --noEmit",
 		"test": "vitest run",
 		"smoke": "bun run build && node ./dist/src/smoke.js",
-		"verify": "bun run check && bun run test && bun run smoke && cargo check",
+		"verify": "bun run check && bun run test && bun run smoke && cargo test && cargo check",
 		"prepack": "bun run verify",
 		"prepublishOnly": "bun run verify",
 		"zed:sync": "bun run build && node ./scripts/sync-zed-dev-extension.mjs"

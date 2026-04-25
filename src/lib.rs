@@ -109,12 +109,50 @@ impl zed::Extension for ParaglideI18nExtension {
         _worktree: &zed::Worktree,
     ) -> Result<zed::Command> {
         let server_path = self.server_script_path(id)?;
+        let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+        let server_arg = server_command_arg(&server_path, &cwd);
 
         Ok(zed::Command {
             command: zed::node_binary_path()?,
-            args: vec![server_path],
+            args: vec![server_arg],
             env: Default::default(),
         })
+    }
+}
+
+fn server_command_arg(server_path: &str, work_dir: &PathBuf) -> String {
+    let path = std::path::Path::new(server_path);
+    if path.is_absolute() {
+        return server_path.to_string();
+    }
+
+    work_dir.join(path).to_string_lossy().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_relative_server_path_from_extension_work_dir() {
+        let work_dir = PathBuf::from("/zed/extensions/work/paraglide-i18n");
+
+        let resolved = server_command_arg(SERVER_PATH, &work_dir);
+
+        assert_eq!(
+            resolved,
+            "/zed/extensions/work/paraglide-i18n/node_modules/paraglide-zed-lsp/dist/src/server.js"
+        );
+    }
+
+    #[test]
+    fn keeps_absolute_dev_server_path() {
+        let work_dir = PathBuf::from("/zed/extensions/work/paraglide-i18n");
+        let dev_server = "/repo/paraglide-zed-lsp/dist/src/server.js";
+
+        let resolved = server_command_arg(dev_server, &work_dir);
+
+        assert_eq!(resolved, dev_server);
     }
 }
 

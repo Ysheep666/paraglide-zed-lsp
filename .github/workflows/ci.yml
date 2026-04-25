@@ -36,6 +36,9 @@ jobs:
       - name: Smoke test
         run: bun run smoke
 
+      - name: Cargo test
+        run: cargo test
+
       - name: Cargo check
         run: cargo check
 
