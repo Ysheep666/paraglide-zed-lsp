@@ -1,4 +1,7 @@
-use std::{env, fs, path::PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 use zed_extension_api::{self as zed, Result};
 
 const DEV_SERVER_ENV: &str = "PARAGLIDE_ZED_LSP_SERVER";
@@ -120,8 +123,8 @@ impl zed::Extension for ParaglideI18nExtension {
     }
 }
 
-fn server_command_arg(server_path: &str, work_dir: &PathBuf) -> String {
-    let path = std::path::Path::new(server_path);
+fn server_command_arg(server_path: &str, work_dir: &Path) -> String {
+    let path = Path::new(server_path);
     if path.is_absolute() {
         return server_path.to_string();
     }
